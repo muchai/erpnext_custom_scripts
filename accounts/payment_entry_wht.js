@@ -6,7 +6,15 @@ frappe.ui.form.on('Payment Entry', {
         get_supplier_details(frm);
     },
     validate: function (frm) {
-        update_total_charges_deducted(frm);
+        if (frm.doc.payment_type == 'Pay' && frm.doc.docstatus === 0) {
+            update_references_total_charges_deducted(frm);
+        }
+    },
+    before_save: function (frm) {
+        if (frm.doc.payment_type == 'Pay' && frm.doc.docstatus === 0) {
+            update_total_charges_deducted(frm);
+            create_deductions_and_losses(frm);
+        }
     },
     on_submit: function (frm) {
         send_sms(frm);
@@ -40,7 +48,7 @@ var get_supplier_details = function (frm) {
 };
 
 //Get and update taxes_and_charges_deducted on references table
-var update_total_charges_deducted = function (frm) {
+var update_references_total_charges_deducted = function (frm) {
     if (frm.doc.tax_withholding_category) {
         frappe.model.with_doc("Tax Withholding Category", frm.doc.tax_withholding_category, function () {
             let taxwithholdingcategory = frappe.model.get_doc("Tax Withholding Category", frm.doc.tax_withholding_category);
@@ -57,46 +65,63 @@ var update_total_charges_deducted = function (frm) {
                                     row.taxes_and_charges_added = var_taxes_and_charges_added;
                                     row.taxes_and_charges_deducted = var_taxes_and_charges_deducted;
                                     frm.refresh_field("references");
-                                    total_taxes_deducted += flt(row.taxes_and_charges_deducted);
                                 }
                             });
                         }
                     });
-                    //Update paid amount and Create deductions and losses
-                    create_deductions_and_losses(frm, accountsrow, total_taxes_deducted);
                 }
             });
         });
     }
 };
 
-//Update paid amount and Create deductions and losses
-var create_deductions_and_losses = function (frm, accountsrow, total_taxes_deducted) {
+//Update paid amount
+var update_total_charges_deducted = function (frm) {
+    let total_taxes_deducted = 0;
+    $.each(frm.doc.references, function (i, row) {
+        if (row.taxes_and_charges_deducted > 0) {
+            total_taxes_deducted += flt(row.taxes_and_charges_deducted);
+        }
+    });
+    //Update paid amount
     let new_paid_amount = 0;
     frm.doc.original_paid_amount = frm.doc.received_amount;
-    frm.doc.total_taxes_and_charges_deducted = total_taxes_deducted;
+    frm.doc.total_taxes_and_charges_deducted = (Math.round(total_taxes_deducted * 100) / 100);
     new_paid_amount = frm.doc.received_amount - frm.doc.total_taxes_and_charges_deducted;
     frm.doc.paid_amount = new_paid_amount;
     refresh_field('original_paid_amount');
     refresh_field('total_taxes_and_charges_deducted');
     refresh_field('paid_amount');
+};
 
-    frm.clear_table('deductions');
+//Create deductions and losses
+var create_deductions_and_losses = function (frm) {
+    if (frm.doc.tax_withholding_category) {
+        frappe.model.with_doc("Tax Withholding Category", frm.doc.tax_withholding_category, function () {
+            let taxwithholdingcategory = frappe.model.get_doc("Tax Withholding Category", frm.doc.tax_withholding_category);
+            $.each(taxwithholdingcategory.accounts, function (index, accountsrow) {
+                if (frm.doc.company == accountsrow.company) {
+                    frm.clear_table('deductions');
 
-    let wht_amount = 0;
-    if (frm.doc.total_taxes_and_charges_deducted > 0) {
-        wht_amount = (frm.doc.total_taxes_and_charges_deducted * -1);
-    } else {
-        wht_amount = frm.doc.total_taxes_and_charges_deducted;
+                    let wht_amount = 0;
+                    if (frm.doc.total_taxes_and_charges_deducted > 0) {
+                        wht_amount = (frm.doc.total_taxes_and_charges_deducted * -1);
+                    } else {
+                        wht_amount = frm.doc.total_taxes_and_charges_deducted;
+                    }
+
+                    let row = frm.add_child('deductions', {
+                        account: accountsrow.account,
+                        cost_center: accountsrow.cost_center,
+                        amount: wht_amount
+                    });
+
+                    frm.refresh_field('deductions');
+
+                }
+            });
+        });
     }
-
-    let row = frm.add_child('deductions', {
-        account: accountsrow.account,
-        cost_center: accountsrow.cost_center,
-        amount: wht_amount
-    });
-
-    frm.refresh_field('deductions');
 };
 
 //Send SMS
