@@ -63,7 +63,7 @@ var update_references_total_charges_deducted = function (frm) {
                                     let var_taxes_and_charges_added = purchase_doc['taxes_and_charges_added'];
                                     let var_taxes_and_charges_deducted = flt((accountsrow.tax_withholding_rate / accountsrow.vat_rate) * var_taxes_and_charges_added);
                                     row.taxes_and_charges_added = var_taxes_and_charges_added;
-                                    row.taxes_and_charges_deducted = var_taxes_and_charges_deducted;
+                                    row.taxes_and_charges_deducted = flt(var_taxes_and_charges_deducted, 2);
                                     frm.refresh_field("references");
                                 }
                             });
@@ -86,8 +86,8 @@ var update_total_charges_deducted = function (frm) {
     //Update paid amount
     let new_paid_amount = 0;
     frm.doc.original_paid_amount = frm.doc.received_amount;
-    frm.doc.total_taxes_and_charges_deducted = (Math.round(total_taxes_deducted * 100) / 100);
-    new_paid_amount = frm.doc.received_amount - frm.doc.total_taxes_and_charges_deducted;
+    frm.doc.total_taxes_and_charges_deducted = flt(total_taxes_deducted, precision("paid_amount"));
+    new_paid_amount = flt(frm.doc.received_amount - frm.doc.total_taxes_and_charges_deducted, precision("paid_amount"));
     frm.doc.paid_amount = new_paid_amount;
     refresh_field('original_paid_amount');
     refresh_field('total_taxes_and_charges_deducted');
